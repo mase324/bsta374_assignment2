@@ -1,0 +1,450 @@
+---
+title: "Exercise 1 --- Basic Maps and Graphs in R"
+subtitle: "BSTA 374 · 12 points · Due Thursday, September 10, 2026, 11:59 pm"
+author: "Eric M. Delmelle · Lehigh University"
+date: last-modified
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 2
+    toc-location: left
+    toc-title: "On this page"
+    number-sections: false
+    code-copy: true
+    highlight-style: github
+    embed-resources: true
+  pdf:
+    papersize: letter
+    geometry:
+      - margin=1in
+    toc: false
+    colorlinks: true
+    code-overflow: wrap
+prefer-html: true
+execute:
+  eval: true
+  echo: true
+---
+
+## What this exercise is
+
+Your first graded work in this course. It covers the first two weeks: reading
+spatial data with `sf`, understanding what a coordinate reference system is and
+moving between them, and producing honest choropleth and point maps with both
+`ggplot2` and `tmap`.
+
+**No data to download.** Everything runs on the North Carolina SIDS data that
+ships inside the `sf` package, so your analysis will reproduce on my machine
+exactly as it does on yours --- which is the point.
+
+Each part ends with **starting code**. Copy it, fill in the blanks marked
+`______`, and adapt it. It is scaffolding, not a solution: the mechanical lines
+are given so that your time goes into the parts that require judgement.
+
+::: {.callout-important}
+## Submission
+Submit **one file** to Course Site:
+
+- `LASTNAME_FI_Exercise1.qmd` --- the source
+
+Example: `DELMELLE_EM_Exercise1.qmd`. Put your name in the document header.
+
+**Due Thursday, September 10, 2026 at 11:59 pm.** Late work loses 20% per day
+unless you arrange something with me in advance.
+:::
+
+::: {.callout-warning}
+## Reproducibility is graded
+Before you submit: restart R (`Ctrl/Cmd + Shift + F10`) and render the document
+from a clean session. If it does not run start to finish, it is incomplete ---
+regardless of how good the maps are. This is the habit that matters most, and
+we start enforcing it now.
+:::
+
+```{r}
+#| label: setup
+
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(tmap)
+library(classInt)
+library(patchwork)
+library(RColorBrewer)
+# add anything else you use -- and load it here, not halfway down
+
+nc <- st_read(system.file("shape/nc.shp", package = "sf"), quiet = TRUE)
+```
+
+---
+
+## Part A --- Read and describe the data (2 points)
+
+Answer each in **one or two sentences of prose**, outside the code chunks, and
+show the code you used to find out.
+
+1. How many features does `nc` contain, and what does one row represent?
+
+**The feature 'nc' contains 100 features. One row represents a county**
+
+2. What geometry type is stored? Why is it that type rather than `POLYGON`?
+
+**Multipolygon is the geometry type.**
+**It is used because places on the coast have counties that include islands, which are separate polygons.**
+**All geometry types need to be the same in R, so all geometry types are multipolygons.**
+   
+3. What coordinate reference system is the data in? Give its name, say whether it
+   is geographic or projected, and say how you found out.
+  
+**The coordinate reference system is NAD27 and is geographic.**
+**I found it at the top with "Geodetic CRS: NAD27"**
+**Then I found the type with st_is_longlat(nc) = TRUE, which is geographic.**
+   
+4. In your own words, what do `BIR74` and `SID74` measure? Why does having both
+   matter more than having either one alone?
+
+**BIR74 measures births from 1974 to 1978 in NC and SID74 measures sudden infant deaths in NC from the same time period.**
+**Having both available means you can calculate rates and ratios, which allows for better comparison between counties.**
+
+### Starting code
+
+```{r}
+#| label: a-starter
+
+# A1 -- how big is it, and what are the columns?
+nrow(nc)
+names(nc)
+nc                       # the header block above the table says a lot
+
+# A2 -- one geometry type per feature; count them
+table(st_geometry_type(nc))
+
+# A3 -- three ways of asking about the CRS
+st_crs(nc)               # the full definition
+st_crs(nc)$input         # the short name
+st_is_longlat(nc)        # TRUE = geographic (degrees), FALSE = projected (metres)
+
+# A4 -- the help page documents every column
+?nc
+```
+
+---
+
+## Part B --- Coordinate reference systems (2 points)
+
+1. Transform `nc` to **EPSG:32119** (NAD83 / North Carolina State Plane, in
+   metres) and store it as a **new object**. Do not overwrite `nc` --- you need
+   both.
+2. Plot the counties **before and after**, near enough to each other that a reader
+   can compare them. One or two sentences on what visibly changed.
+
+**In the maps, p1 is curved downward more on the western side of NC compared to p2.**
+  
+3. Compute the area of every county in **square kilometres**, using the projected
+   version. Report the five largest.
+
+**The five largest are Columbus, Robeson, Sampson, Bladen, and Wake.**
+
+
+4. Now compute areas from the *unprojected* object as well. Compare the two sets
+   of numbers and explain, in two or three sentences, what `sf` did and why the
+   projected version is the one you would report in a paper.
+
+**When calculating area on the unprojected data (nc), sf treated the Earth as a curved 3D globe, using degrees. When using the projected data (nc_proj), it measured area on a flat 2D map, using meters.**  
+**I would use the projected version. Using that gives exact, standardized measurements in units we regularly use to calculate distance (meters/kilometers) and is easier for people to understand.**  
+
+::: {.callout-note}
+Step 4 will not give you an error, and the two sets of numbers will be close but
+not identical. That is the interesting part --- the question is which *surface*
+each answer refers to.
+:::
+
+### Starting code
+
+```{r}
+#| label: b-starter
+
+# B1
+nc_proj <- st_transform(nc, 32119)
+
+# B2 -- one plot each
+p1 <- ggplot(nc)      + geom_sf(fill = "grey90", colour = "white") + theme_void()
+p2 <- ggplot(nc_proj) + geom_sf(fill = "grey90", colour = "white") + theme_void()
+
+p1
+p2
+
+p1+p2
+
+# side by side, if you like:  library(patchwork);  p1 + p2
+
+# B3 -- st_area() returns square METRES, as a units object
+nc_proj <- nc_proj |>
+  mutate(area_km2 = as.numeric(units::set_units(st_area(nc_proj), km^2)))
+
+nc_proj |>
+  st_drop_geometry() |>
+  slice_max(area_km2, n = 5) |>
+  select(NAME, area_km2)
+
+
+
+# B4 -- now do the same starting from nc (degrees) and compare
+nc <- nc |>
+  mutate(area_km2 = as.numeric(units::set_units(st_area(nc), km^2)))
+
+nc |>
+  st_drop_geometry() |>
+  slice_max(area_km2, n = 5) |>
+  select(NAME, area_km2)
+
+p1/p2
+
+```
+
+---
+
+## Part C --- Choropleth maps (5 points)
+
+This is the largest part of the exercise, and it is as much about judgement as
+about code.
+
+1. Add a column giving the **SIDS rate per 1,000 live births** for 1974--78.
+2. Make a choropleth of the **raw counts** (`SID74`) and one of the **rate**,
+   using `ggplot2`. Then write three or four sentences explaining why the two maps
+   disagree, and which one you would put in front of a health department, and why.
+
+**The first one shows the total count of SIDS in a county and the second one shows the rate of SIDS per 1,000 live births.**
+**In the one that shows only the count, there is nothing to compare it to, so while some counties seem high and others don't, it's hard to understand how serious it is. I would use the map that shows the rate, which highlights different counties and shows the number of SIDS compared to the number of births, which helps to give perspective.** 
+
+3. Rebuild the rate map using **`tmap`**. Same information, other package.
+
+
+4. Vary the **class intervals** on the rate map: produce it at least three ways
+   --- for instance equal intervals, quantiles, and Jenks natural breaks. Two or
+   three sentences on how much the apparent geography of risk changes. Name the
+   classification you would defend, and say why.
+
+**In some maps, like the ones using equal or pretty, seem to minimize the risks, where most regions appear lighter colored, having lower SIDS rates. Using quantiles, the risks seem higher, with more counties appearing darker colored. I would defend using Jenks natural breaks because it takes into account and breaks apart groups with trying to minimize the variance in groups.**
+
+
+5. Every map you submit must have a **legend with units**, a **title**, thin
+   boundaries that do not overwhelm the fill, and a **perceptually uniform,
+   colour-blind-safe palette**. State in one sentence which palette you chose and
+   why, including whether dark means high or low.
+
+**I chose the YlOrRd palette, where dark means high, because with red being a color that is associated with danger and not often used for positive indicators, is a good color choice for SIDS rates.**
+
+
+::: {.callout-tip}
+## What earns full marks here
+Not the prettiest map --- the map whose choices you can defend. A student who
+picks quantiles and explains the trade-off in two clear sentences scores higher
+than one who picks Jenks because it looked nicer.
+:::
+
+### Starting code
+
+```{r}
+#| label: c-starter
+
+# C1 -- deaths per 1,000 live births
+nc <- nc |>
+  mutate(rate74 = 1000 * SID74 / BIR74)
+
+# C2 -- counts, then rates. Same code, one variable changed.
+ggplot(nc) +
+  geom_sf(aes(fill = SID74), colour = "white", linewidth = 0.15) +
+  scale_fill_distiller(palette = "Reds", direction = 1) +
+  labs(title = "Sudden infant death count, 1974-78") +
+  theme_void()
+
+ggplot(nc) +
+  geom_sf(aes(fill = rate74), colour = "white", linewidth = 0.15) +
+  scale_fill_viridis_c(option = "cividis", direction = -1, name = "per 1,000") +
+  labs(title = "Sudden infant death rate, 1974-78") +
+  theme_void()
+
+
+# other palettes to try:
+#   scale_fill_viridis_c(option = "viridis" / "plasma" / "cividis" / "mako")
+#   scale_fill_distiller(palette = "YlOrRd", direction = 1)
+#   RColorBrewer::display.brewer.all()   # shows every ColorBrewer option
+
+# C3 -- the same map in tmap
+tmap_mode("plot")                        # "view" makes it interactive
+
+tm_shape(nc) +
+  tm_polygons(fill = "rate74") +
+  tm_title("Sudden infant death rate, 1974-78")
+
+# C4 -- change ONLY the classification, so the comparison is fair
+tm_shape(nc) +
+  tm_polygons(fill = "rate74",
+              fill.scale = tm_scale_intervals(style = "quantile", n = 5, values = "brewer.YlOrRd"),
+    fill.legend = tm_legend(title = "SIDS per 1,000 births"),
+    #    fill.legend = tm_legend(title = "SIDS per 1,000 births", frame = FALSE),
+    col = "black", lwd = 0.3) +
+  tm_title("Quantiles") +
+  tm_layout(frame = FALSE)
+
+tm_shape(nc) +
+  tm_polygons(fill = "rate74",
+              fill.scale = tm_scale_intervals(style = "equal", n = 5, values = "brewer.YlOrRd"),
+    fill.legend = tm_legend(title = "SIDS per 1,000 births"),
+    #    fill.legend = tm_legend(title = "SIDS per 1,000 births", frame = FALSE),
+    col = "black", lwd = 0.3) +
+  tm_title("Equal") +
+  tm_layout(frame = FALSE)
+
+tm_shape(nc) +
+  tm_polygons(fill = "rate74",
+              fill.scale = tm_scale_intervals(style = "jenks", n = 5, values = "brewer.YlOrRd"),
+    fill.legend = tm_legend(title = "SIDS per 1,000 births"),
+    #    fill.legend = tm_legend(title = "SIDS per 1,000 births", frame = FALSE),
+    col = "black", lwd = 0.3) +
+  tm_title("Jenks") +
+  tm_layout(frame = FALSE)
+
+tm_shape(nc) +
+  tm_polygons(fill = "rate74",
+              fill.scale = tm_scale_intervals(style = "pretty", n = 5, values = "brewer.YlOrRd"),
+    fill.legend = tm_legend(title = "SIDS per 1,000 births"),
+    #    fill.legend = tm_legend(title = "SIDS per 1,000 births", frame = FALSE),
+    col = "black", lwd = 0.3) +
+  tm_title("Pretty") +
+  tm_layout(frame = FALSE)
+
+tm_shape(nc) +
+  tm_polygons(fill = "rate74",
+              fill.scale = tm_scale_intervals(style = "fisher", n = 5, values = "brewer.YlOrRd"),
+    fill.legend = tm_legend(title = "SIDS per 1,000 births"),
+    #    fill.legend = tm_legend(title = "SIDS per 1,000 births", frame = FALSE),
+    col = "black", lwd = 0.3) +
+  tm_title("Fisher") +
+  tm_layout(frame = FALSE)
+
+classIntervals(nc$rate74, n = 5, style = "quantile")
+classIntervals(nc$rate74, n = 5, style = "equal")
+classIntervals(nc$rate74, n = 5, style = "jenks")
+classIntervals(nc$rate74, n = 5, style = "pretty")
+
+# then repeat with style = "equal" and style = "jenks"
+# other options: "pretty", "fisher"
+
+
+
+
+```
+
+::: {.callout-warning}
+## A note on `tmap` versions
+`tmap` changed its argument names in version 4. If an example you find online
+uses `tm_polygons(col = ...)` or `style = ...` directly and yours errors, check
+`packageVersion("tmap")` and read the help page rather than guessing. The code
+above is written for version 4.
+:::
+
+---
+
+## Part D --- A point layer (2 points)
+
+1. Look up the approximate longitude and latitude of **four cities in North
+   Carolina** and build a small table holding the name and the two coordinates.
+   Cite where you got the coordinates.
+2. Turn that table into an `sf` object with the correct CRS. State which EPSG
+   code you used and why.
+
+**I used 4326 because we're using longitude and latitude to define locations and this code uses degrees whereas projected uses meters.**
+
+
+3. Plot the four cities **on top of** your rate choropleth, labelled legibly.
+4. One sentence: what would go wrong if you built the `sf` object with the
+   coordinate columns in the other order?
+
+**The points would not be in North Carolina because longitude and latitude are switched, they would be somewhere on the opposite side in the southern part of the globe.**
+
+
+
+### Starting code
+
+```{r}
+#| label: d-starter
+
+# D1 -- North Carolina longitudes are NEGATIVE (west of Greenwich)
+cities <- tibble(
+  name = c("Cleveland", "Davidson", "Southport", "Asheville"),
+  lon  = c(-80.67701, -80.83912, -78.01933, -82.55402),
+  lat  = c(35.7332, 35.50233, 33.91821, 35.60095)
+)
+
+# D2 -- coords takes the column names in x, y order: longitude FIRST
+cities_sf <- cities |>
+  st_as_sf(coords = c("lon", "lat"), crs = 4326)
+
+# D3 -- layers draw in order, so points come after polygons
+ggplot() +
+  geom_sf(data = nc, aes(fill = rate74), colour = "white", linewidth = 0.15) +
+  geom_sf(data = cities_sf, size = 1.5, colour = "black") +
+  geom_sf_text(data = cities_sf, aes(label = name), size = 3, nudge_y = 0.12) +
+  scale_fill_viridis_c(option = "magma", direction = -1, name = "per 1,000") +
+  theme_void()
+
+# check your cities landed in North Carolina and not in the ocean
+```
+
+---
+
+## Part E --- Reproducibility and AI use (1 point)
+
+1. Your document renders from a clean session, with every package loaded
+   explicitly. *(Check this last, after you have stopped editing.)*
+2. End the document with an **AI use note**: which tools you used, what for, and
+   at which stage --- planning, coding, debugging, interpreting, or writing. Two
+   or three sentences.
+
+**I used AI to help answer in part B, #4**
+
+**Latitude & longitude were found on geodatos.net**
+
+Remember the course policy: AI use is unrestricted and costs you nothing, but you
+must be able to explain every line you hand in. Disclosure is the only
+requirement.
+
+### Starting code
+
+```{r}
+#| label: e-starter
+
+sessionInfo()
+```
+
+---
+
+## Rubric
+
+| Part | What is assessed | Points |
+|---|---|---|
+| **A** | Correct inspection of the object; clear, accurate answers | 2 |
+| **B** | Correct transformation and areas; comparison explained | 2 |
+| **C** | Both packages working; counts-vs-rates argument; class intervals compared and a defended choice; cartographic standards met | 5 |
+| **D** | Point layer built with the right CRS and correctly overlaid | 2 |
+| **E** | Renders from a clean session; AI use note present | 1 |
+| | **Total** | **12** |
+
+Writing counts for roughly 10% of the mark within each part: the prose should be
+in complete sentences and free of obvious errors. Every part asks for
+interpretation as well as code --- a submission that is all code and no sentences
+cannot score above about 60%.
+
+---
+
+## Getting help
+
+- Office hours, or email me --- with the code and the exact error message, not a
+  screenshot of the whole console.
+- The `sf` documentation is genuinely good: `vignette("sf1", package = "sf")`.
+- Moraga Chapter 2 covers most of Parts A--C.
+- If you are stuck for more than about thirty minutes on something that feels
+  mechanical, that is a signal to ask rather than to persevere.
