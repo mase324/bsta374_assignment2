@@ -1,8 +1,9 @@
 ---
 title: "Exercise 1 --- Basic Maps and Graphs in R"
 subtitle: "BSTA 374 · 12 points · Due Thursday, September 10, 2026, 11:59 pm"
-author: "Eric M. Delmelle · Lehigh University
-**Student:** Maggie Sobaszek"
+author: 
+  - "Eric M. Delmelle · Lehigh University"
+  - "Student: Maggie Sobaszek"
 date: last-modified
 format:
   html:
@@ -405,9 +406,11 @@ ggplot() +
    at which stage --- planning, coding, debugging, interpreting, or writing. Two
    or three sentences.
 
-**I used AI to help answer in part B, #4**
+**I used AI (Gemini) to help answer in part B, #4**
 
 **Latitude & longitude were found on geodatos.net**
+
+**For the second assignment of pushing on Github, I also used AI (ChatGPT) to add my name to the header.**
 
 Remember the course policy: AI use is unrestricted and costs you nothing, but you
 must be able to explain every line you hand in. Disclosure is the only
